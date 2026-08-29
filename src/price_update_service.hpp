@@ -42,9 +42,7 @@ class PriceUpdateService {
   struct PriceStationClient {
     UpdateId nextUpdateId {0};
     PriceUpdateRequest nextUpdate {};
-
     std::optional<uint64_t> inFlightUpdateId {};
-    UpdateId lastAckUpdateId {0};
   };
 
   std::mutex m_;

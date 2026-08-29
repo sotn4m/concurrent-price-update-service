@@ -10,19 +10,14 @@
 
 #include "price_update_service.hpp"
 
-struct SentMessage {
-  StationId station;
-  UpdateId update;
-  Price price;
-};
-
 class FakeNetwork {
  public:
   SendFn sender () {
     return [this] (PriceUpdateRequest request) {
-      std::lock_guard lock (mutex_);
-      sent_.push_back (
-          SentMessage {request.stationId, request.id, request.price});
+      {
+        std::lock_guard lock (mutex_);
+        sent_.push_back (request);
+      }
       cv_.notify_all ();
     };
   }
@@ -34,7 +29,7 @@ class FakeNetwork {
     return cv_.wait_for (lock, timeout, [&] { return sent_.size () >= count; });
   }
 
-  std::vector<SentMessage> snapshot () const {
+  std::vector<PriceUpdateRequest> snapshot () const {
     std::lock_guard<std::mutex> lock (mutex_);
     return sent_;
   }
@@ -45,15 +40,23 @@ class FakeNetwork {
   }
 
   // Most recently sent message for `station`, if any has been sent yet.
-  std::optional<SentMessage> last_for (StationId station) const {
-    std::lock_guard<std::mutex> lock (mutex_);
-    auto reversed = sent_ | std::views::reverse;
-    auto it = std::ranges::find (reversed, station, &SentMessage::station);
+  std::optional<PriceUpdateRequest> last_for (StationId station) const {
+    std::vector<PriceUpdateRequest> messages;
+    messages.reserve (sent_.size ());
+
+    {
+      std::lock_guard<std::mutex> lock (mutex_);
+      messages = sent_;
+    }
+
+    auto reversed = messages | std::views::reverse;
+    auto it =
+        std::ranges::find (reversed, station, &PriceUpdateRequest::stationId);
     return it != reversed.end () ? std::optional (*it) : std::nullopt;
   }
 
  private:
   mutable std::mutex mutex_;
   std::condition_variable cv_;
-  std::vector<SentMessage> sent_;
+  std::vector<PriceUpdateRequest> sent_;
 };

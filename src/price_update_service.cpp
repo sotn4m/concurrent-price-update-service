@@ -42,10 +42,9 @@ void PriceUpdateService::acknowledge (PriceUpdateAck response) {
       return;
     }
 
-    client.lastAckUpdateId = response.updateId;
     client.inFlightUpdateId.reset ();
 
-    if (client.nextUpdateId > client.lastAckUpdateId) {
+    if (client.nextUpdateId != response.updateId) {
       client.inFlightUpdateId = client.nextUpdateId;
       newUpdateRequest = client.nextUpdate;
     }
