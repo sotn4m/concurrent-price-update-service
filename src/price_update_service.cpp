@@ -6,54 +6,52 @@ PriceUpdateService::PriceUpdateService (SendFn send)
 PriceUpdateService::~PriceUpdateService () = default;
 
 void PriceUpdateService::set_price (StationId station, Price price) {
-  std::optional<UpdateId> priceUpdateId;
+  std::optional<PriceUpdateRequest> newUpdateRequest;
   {
     std::lock_guard lock (m_);
     auto [it, _] = stations_.try_emplace (station);
 
     auto& client = it->second;
 
-    auto send_price_update = client.currentUpdateId == client.lastAckUpdateId;
+    ++client.nextUpdateId;
+    client.nextUpdate = {station, client.nextUpdateId, price};
 
-    ++client.currentUpdateId;
-    client.currentPrice = price;
-
-    if (send_price_update) {
-      client.inFlightUpdateId = client.currentUpdateId;
-      priceUpdateId = client.currentUpdateId;
+    if (!client.inFlightUpdateId) {
+      client.inFlightUpdateId = client.nextUpdateId;
+      newUpdateRequest = client.nextUpdate;
     }
   }
 
-  if (priceUpdateId) {
-    send_ (station, *priceUpdateId, price);
+  if (newUpdateRequest) {
+    send_ (*newUpdateRequest);
   }
 }
 
-void PriceUpdateService::acknowledge (StationId station, UpdateId updateId) {
-  std::optional<std::pair<UpdateId, Price>> newUpdate;
+void PriceUpdateService::acknowledge (PriceUpdateAck response) {
+  std::optional<PriceUpdateRequest> newUpdateRequest;
   {
     std::lock_guard lock (m_);
-    auto it = stations_.find (station);
+    auto it = stations_.find (response.stationId);
     if (it == stations_.end ()) {
       return;
     }
     auto& client = it->second;
 
-    if (!client.inFlightUpdateId || updateId != *client.inFlightUpdateId) {
+    if (!client.inFlightUpdateId ||
+        response.updateId != *client.inFlightUpdateId) {
       return;
     }
 
-    client.lastAckUpdateId = updateId;
+    client.lastAckUpdateId = response.updateId;
     client.inFlightUpdateId.reset ();
 
-    if (client.currentUpdateId > client.lastAckUpdateId) {
-      client.inFlightUpdateId = client.currentUpdateId;
-      newUpdate = {client.currentUpdateId, client.currentPrice};
+    if (client.nextUpdateId > client.lastAckUpdateId) {
+      client.inFlightUpdateId = client.nextUpdateId;
+      newUpdateRequest = client.nextUpdate;
     }
   }
 
-  if (newUpdate) {
-    auto [newUpdateId, newPrice] = *newUpdate;
-    send_ (station, newUpdateId, newPrice);
+  if (newUpdateRequest) {
+    send_ (*newUpdateRequest);
   }
 }

@@ -19,9 +19,10 @@ struct SentMessage {
 class FakeNetwork {
  public:
   SendFn sender () {
-    return [this] (StationId station, UpdateId update, Price price) {
+    return [this] (PriceUpdateRequest request) {
       std::lock_guard lock (mutex_);
-      sent_.push_back (SentMessage {station, update, price});
+      sent_.push_back (
+          SentMessage {request.stationId, request.id, request.price});
       cv_.notify_all ();
     };
   }

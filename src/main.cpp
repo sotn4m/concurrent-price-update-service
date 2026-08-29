@@ -5,8 +5,9 @@
 int main() {
     // A trivial "network" that just logs what would be sent. Swap this for a
     // real client when wiring up actual station communication.
-    PriceUpdateService service([](StationId station, UpdateId update, Price price) {
-        std::println("station={} update={} price={}", station, update, price);
+    PriceUpdateService service([](PriceUpdateRequest request) {
+        std::println("station={} update={} price={}", request.stationId, request.id,
+                      request.price);
     });
 
     service.set_price(1, 100);

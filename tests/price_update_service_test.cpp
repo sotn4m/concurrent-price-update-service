@@ -51,7 +51,7 @@ Price drain_to (Service& svc,
   while (std::chrono::steady_clock::now () < deadline) {
     auto last = net.last_for (station);
     if (last && (!have_acked || last->update != last_update_acked)) {
-      svc.acknowledge (station, last->update);
+      svc.acknowledge (PriceUpdateAck {station, last->update});
       last_acked = last->price;
       last_update_acked = last->update;
       have_acked = true;
@@ -78,7 +78,7 @@ TEST_F (PriceUpdateServiceTest, SingleSetPriceSendsExactlyOneUpdate) {
   EXPECT_EQ (msgs[0].station, 1u);
   EXPECT_EQ (msgs[0].price, 100);
 
-  svc.acknowledge (1, msgs[0].update);
+  svc.acknowledge (PriceUpdateAck {1, msgs[0].update});
 
   // Nothing else was pending, so acking shouldn't trigger another send.
   expect_no_additional_sends (net, 1);
@@ -102,7 +102,7 @@ TEST_F (PriceUpdateServiceTest, CoalescesRapidUpdatesWhileInFlight) {
 
   // Acking the first update should trigger exactly one more send, and it
   // should carry the latest price (130), skipping the intermediate 120.
-  svc.acknowledge (1, net.snapshot ()[0].update);
+  svc.acknowledge (PriceUpdateAck {1, net.snapshot ()[0].update});
   ASSERT_TRUE (net.wait_for_count (2));
 
   auto msgs = net.snapshot ();
@@ -113,7 +113,7 @@ TEST_F (PriceUpdateServiceTest, CoalescesRapidUpdatesWhileInFlight) {
         << "an intermediate price should never be put on the wire";
   }
 
-  svc.acknowledge (1, msgs[1].update);
+  svc.acknowledge (PriceUpdateAck {1, msgs[1].update});
   expect_no_additional_sends (net, 2);
 }
 
@@ -145,22 +145,22 @@ TEST_F (PriceUpdateServiceTest,
       1, 200);  // superseding value, still queued behind the in-flight send
   expect_no_additional_sends (net, 1);
 
-  svc.acknowledge (1, first.update);
+  svc.acknowledge (PriceUpdateAck {1, first.update});
   ASSERT_TRUE (net.wait_for_count (2));
   const auto second = net.snapshot ()[1];
   EXPECT_EQ (second.price, 200);
 
   // A late duplicate of the first ack must not resend or corrupt state.
-  svc.acknowledge (1, first.update);
+  svc.acknowledge (PriceUpdateAck {1, first.update});
   // An unknown/bogus update id must also be handled gracefully (no crash,
   // no spurious send, and it must not corrupt tracking of the real
   // in-flight update below).
-  svc.acknowledge (1, first.update + 1'000'000);
+  svc.acknowledge (PriceUpdateAck {1, first.update + 1'000'000});
   expect_no_additional_sends (net, 2);
 
   // The real ack for the still-outstanding update must still be honored
   // even after the bogus/duplicate ones above.
-  svc.acknowledge (1, second.update);
+  svc.acknowledge (PriceUpdateAck {1, second.update});
   expect_no_additional_sends (net, 2);
 
   // And the station must still be responsive to new prices afterward.
@@ -202,7 +202,7 @@ TEST_F (PriceUpdateServiceTest,
 
   // Race: one thread acknowledges the in-flight update while another
   // thread supersedes it with a new price, at (roughly) the same time.
-  std::thread acker ([&] { svc.acknowledge (1, first_update); });
+  std::thread acker ([&] { svc.acknowledge (PriceUpdateAck {1, first_update}); });
   std::thread setter ([&] { svc.set_price (1, kFinal); });
   acker.join ();
   setter.join ();
@@ -242,7 +242,7 @@ TEST_F (PriceUpdateServiceTest, ConcurrentMultiStationStressConverges) {
     while (!st.stop_requested ()) {
       for (StationId s : station_ids) {
         if (auto last = net.last_for (s)) {
-          svc.acknowledge (s, last->update);
+          svc.acknowledge (PriceUpdateAck {s, last->update});
         }
       }
       std::this_thread::sleep_for (std::chrono::microseconds (200));

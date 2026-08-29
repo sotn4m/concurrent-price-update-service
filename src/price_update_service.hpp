@@ -12,8 +12,18 @@ using UpdateId = std::uint64_t;
 
 using Price = std::int64_t;
 
-using SendFn =
-    std::function<void (StationId station, UpdateId update, Price price)>;
+struct PriceUpdateAck {
+  StationId stationId {0};
+  UpdateId updateId {0};
+};
+
+struct PriceUpdateRequest {
+  StationId stationId {0};
+  UpdateId id {0};
+  Price price {0};
+};
+
+using SendFn = std::function<void (PriceUpdateRequest update)>;
 
 class PriceUpdateService {
  public:
@@ -26,14 +36,15 @@ class PriceUpdateService {
 
   void set_price (StationId station, Price price);
 
-  void acknowledge (StationId station, UpdateId update);
+  void acknowledge (PriceUpdateAck response);
 
  private:
   struct PriceStationClient {
-    UpdateId currentUpdateId {0};
+    UpdateId nextUpdateId {0};
+    PriceUpdateRequest nextUpdate {};
+
     std::optional<uint64_t> inFlightUpdateId {};
     UpdateId lastAckUpdateId {0};
-    Price currentPrice {0};
   };
 
   std::mutex m_;
